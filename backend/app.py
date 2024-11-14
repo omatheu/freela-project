@@ -76,6 +76,10 @@ def comparar_cpfs(concierge_file, sanus_file, beneficiarios_file):
 
     return result
 
+@app.route("/", methods=["GET"])
+def get():
+    return "Hello world!"
+
 # Rota para processar e retornar os resultados
 @app.route("/upload", methods=["POST"])
 def upload_files():
