@@ -19,7 +19,7 @@ function App() {
     formData.append('beneficiarios_file', beneficiariosFile);
 
     try {
-      const response = await axios.post('http://127.0.0.1:5000/upload', formData, {
+      const response = await axios.post('http://freela-project.onrender.com/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -33,7 +33,7 @@ function App() {
   // Função para baixar o arquivo Excel gerado no backend
   const handleDownload = async () => {
     try {
-      const response = await axios.post('http://127.0.0.1:5000/download_excel', {
+      const response = await axios.post('http://freela-project.onrender.com/download_excel', {
         data: resultados,
         file_name: fileName,
       }, {
@@ -92,7 +92,7 @@ function App() {
 
   return (
     <div className="container mt-5">
-      <h1 className="text-center">Comparar CPFs entre Planilhas</h1>
+      <h1 className="text-center">Bate Cadastral Sanus</h1>
       <form onSubmit={handleSubmit} className="mt-4">
         <div className="row mb-3">
           <div className="col-md-4">
