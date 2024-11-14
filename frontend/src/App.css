@@ -1,0 +1,25 @@
+.container {
+  max-width: 900px;
+  margin: auto;
+}
+
+h1 {
+  margin-bottom: 30px;
+}
+
+button {
+  width: 100%;
+}
+
+table {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.table-danger {
+  background-color: #f8d7da;
+}
+
+.table-success {
+  background-color: #d4edda;
+}
