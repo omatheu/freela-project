@@ -9,6 +9,9 @@ function App() {
   const [resultados, setResultados] = useState([]);
   const [fileName, setFileName] = useState('comparacao_resultados'); // Nome do arquivo Excel
 
+  // Variável para armazenar a URL do servidor
+  const serverUrl = 'http://freela-project.onrender.com';
+
   // Envia os arquivos para o backend e obtém os resultados da comparação
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -19,7 +22,7 @@ function App() {
     formData.append('beneficiarios_file', beneficiariosFile);
 
     try {
-      const response = await axios.post('http://freela-project.onrender.com/upload', formData, {
+      const response = await axios.post(`${serverUrl}/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -33,7 +36,7 @@ function App() {
   // Função para baixar o arquivo Excel gerado no backend
   const handleDownload = async () => {
     try {
-      const response = await axios.post('http://freela-project.onrender.com/download_excel', {
+      const response = await axios.post(`${serverUrl}/download_excel`, {
         data: resultados,
         file_name: fileName,
       }, {
@@ -134,3 +137,4 @@ function App() {
 }
 
 export default App;
+
