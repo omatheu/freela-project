@@ -10,7 +10,7 @@ function App() {
   const [fileName, setFileName] = useState('comparacao_resultados'); // Nome do arquivo Excel
 
   // Variável para armazenar a URL do servidor
-  const serverUrl = 'http://freela-project.onrender.com';
+  const serverUrl = 'https://freela-project-72p2.onrender.com';
 
   // Envia os arquivos para o backend e obtém os resultados da comparação
   const handleSubmit = async (event) => {
