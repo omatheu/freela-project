@@ -171,7 +171,7 @@ def download_excel():
 
     output.seek(0)
 
-    return send_file(output, attachment_filename=f"{file_name}.xlsx", as_attachment=True)
+    return send_file(output, download_name=f"{file_name}.xlsx", as_attachment=True)
 
 if __name__ == "__main__":
     if not os.path.exists('uploads'):
