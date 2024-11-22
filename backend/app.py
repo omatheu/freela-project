@@ -93,27 +93,34 @@ def get():
 @app.route("/upload", methods=["POST"])
 def upload_files():
     try:
-        concierge_file = request.files.get('concierge_file')
-        sanus_file = request.files.get('sanus_file')
-        beneficiarios_file = request.files.get('beneficiarios_file')
+        # Verifica se algum arquivo foi enviado
+        if not request.files:
+            return jsonify({'error': 'Nenhum arquivo foi enviado.'}), 400
 
-        if not (concierge_file and sanus_file and beneficiarios_file):
-            return jsonify({'error': 'Arquivos não enviados corretamente.'}), 400
+        # Cria um dicionário para armazenar os arquivos carregados
+        uploaded_files = {}
 
-        concierge_path = os.path.join(app.config['UPLOAD_FOLDER'], concierge_file.filename)
-        sanus_path = os.path.join(app.config['UPLOAD_FOLDER'], sanus_file.filename)
-        beneficiarios_path = os.path.join(app.config['UPLOAD_FOLDER'], beneficiarios_file.filename)
+        # Itera sobre todos os arquivos enviados e salva no diretório
+        for file_field, uploaded_file in request.files.items():
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
+            uploaded_file.save(file_path)
+            uploaded_files[file_field] = file_path
 
-        concierge_file.save(concierge_path)
-        sanus_file.save(sanus_path)
-        beneficiarios_file.save(beneficiarios_path)
+        # Verifica se todos os arquivos necessários foram enviados
+        if len(uploaded_files) < 3:
+            return jsonify({'error': 'Arquivos insuficientes. Certifique-se de enviar 3 arquivos.'}), 400
 
-        resultados = comparar_cpfs(concierge_path, sanus_path, beneficiarios_path)
+        # Assumindo que os arquivos são os 3 esperados (independentemente da ordem)
+        file_paths = list(uploaded_files.values())
+
+        # Chama a função para comparar os arquivos
+        resultados = comparar_cpfs(*file_paths)
 
         if "error" in resultados:
             return jsonify(resultados), 400
 
         return jsonify(resultados)
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

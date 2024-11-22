@@ -16,11 +16,12 @@ function App() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const formData = new FormData();
-
-    formData.append('concierge_file', conciergeFile);
-    formData.append('sanus_file', sanusFile);
-    formData.append('beneficiarios_file', beneficiariosFile);
-
+  
+    // Adiciona os arquivos, independentemente de nomes específicos
+    if (conciergeFile) formData.append('file1', conciergeFile);
+    if (sanusFile) formData.append('file2', sanusFile);
+    if (beneficiariosFile) formData.append('file3', beneficiariosFile);
+  
     try {
       const response = await axios.post(`${serverUrl}/upload`, formData, {
         headers: {
@@ -32,6 +33,7 @@ function App() {
       console.error('Erro ao enviar arquivos:', error);
     }
   };
+  
 
   // Função para baixar o arquivo Excel gerado no backend
   const handleDownload = async () => {
