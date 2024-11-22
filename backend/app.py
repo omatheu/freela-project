@@ -15,6 +15,17 @@ def formatar_cpf(cpf):
     cpf_str = re.sub(r'\D', '', str(cpf))  # Remove todos os caracteres não numéricos
     return cpf_str.zfill(11)
 
+# Função para identificar qual tabela é qual com base nas colunas
+def identificar_arquivo(df):
+    if any('funcionario' in col.lower() or 'nome' in col.lower() for col in df.columns):
+        return 'concierge'
+    elif any('beneficiário' in col.lower() or 'nome' in col.lower() for col in df.columns):
+        return 'beneficiarios'
+    elif any('beneficiário' in col.lower() or 'sanus' in col.lower() for col in df.columns):
+        return 'sanus'
+    else:
+        return None
+
 # Função para encontrar a coluna de CPF
 def encontrar_coluna_cpf(df):
     for col in df.columns:
@@ -35,43 +46,55 @@ def encontrar_coluna_nome(df, tabela):
     raise ValueError(f"Coluna de Nome não encontrada na tabela {tabela}")
 
 # Função para processar os arquivos e comparar os CPFs e Nomes
-def comparar_cpfs(concierge_file, sanus_file, beneficiarios_file):
-    concierge = pd.read_excel(concierge_file)
-    sanus = pd.read_excel(sanus_file)
-    beneficiarios = pd.read_excel(beneficiarios_file)
+def comparar_cpfs(files):
+    dataframes = {}
+    
+    # Verificar e classificar os arquivos enviados
+    for file_name, file_content in files.items():
+        try:
+            df = pd.read_excel(file_content)
+            tabela = identificar_arquivo(df)
+            if tabela:
+                dataframes[tabela] = df
+            else:
+                return jsonify({'error': f"Não foi possível identificar o arquivo '{file_name}'."}), 400
+        except Exception as e:
+            return jsonify({'error': f"Erro ao processar o arquivo '{file_name}': {str(e)}"}), 400
 
-    coluna_cpf_concierge = encontrar_coluna_cpf(concierge)
-    coluna_nome_concierge = encontrar_coluna_nome(concierge, 'concierge')
-    coluna_cpf_sanus = encontrar_coluna_cpf(sanus)
-    coluna_nome_sanus = encontrar_coluna_nome(sanus, 'sanus')
-    coluna_cpf_beneficiarios = encontrar_coluna_cpf(beneficiarios)
-    coluna_nome_beneficiarios = encontrar_coluna_nome(beneficiarios, 'beneficiarios')
+    # Garantir que todas as tabelas necessárias foram encontradas
+    required_tables = {'concierge', 'sanus', 'beneficiarios'}
+    if not required_tables.issubset(dataframes.keys()):
+        return jsonify({'error': "Nem todas as tabelas obrigatórias foram enviadas (concierge, sanus, beneficiarios)."}), 400
 
-    concierge[coluna_cpf_concierge] = concierge[coluna_cpf_concierge].astype(str).apply(formatar_cpf)
-    sanus[coluna_cpf_sanus] = sanus[coluna_cpf_sanus].astype(str).apply(formatar_cpf)
-    beneficiarios[coluna_cpf_beneficiarios] = beneficiarios[coluna_cpf_beneficiarios].astype(str).apply(formatar_cpf)
+    concierge = dataframes['concierge']
+    sanus = dataframes['sanus']
+    beneficiarios = dataframes['beneficiarios']
+
+    # Garantir formatação de CPFs
+    concierge['cpf'] = concierge['cpf'].astype(str).apply(formatar_cpf)
+    sanus['cpf'] = sanus['cpf'].astype(str).apply(formatar_cpf)
+    beneficiarios['cpf'] = beneficiarios['cpf'].astype(str).apply(formatar_cpf)
 
     # Combine todos os CPFs em um único conjunto
-    all_cpfs = set(concierge[coluna_cpf_concierge]).union(set(sanus[coluna_cpf_sanus])).union(set(beneficiarios[coluna_cpf_beneficiarios]))
+    all_cpfs = set(concierge['cpf']).union(set(sanus['cpf'])).union(set(beneficiarios['cpf']))
 
     # Preparar o resultado para cada CPF
     result = []
     for cpf in all_cpfs:
-        # Buscar o nome nas três tabelas: Sanus, Concierge, Beneficiários (nesta ordem de prioridade)
         nome = '❌'
-        if cpf in sanus[coluna_cpf_sanus].values:
-            nome = sanus[sanus[coluna_cpf_sanus] == cpf][coluna_nome_sanus].values[0]
-        elif cpf in concierge[coluna_cpf_concierge].values:
-            nome = concierge[concierge[coluna_cpf_concierge] == cpf][coluna_nome_concierge].values[0]
-        elif cpf in beneficiarios[coluna_cpf_beneficiarios].values[0]:
-            nome = beneficiarios[beneficiarios[coluna_cpf_beneficiarios] == cpf][coluna_nome_beneficiarios].values[0]
+        if cpf in sanus['cpf'].values:
+            nome = sanus[sanus['cpf'] == cpf]['nome'].values[0]
+        elif cpf in concierge['cpf'].values:
+            nome = concierge[concierge['cpf'] == cpf]['nome'].values[0]
+        elif cpf in beneficiarios['cpf'].values:
+            nome = beneficiarios[beneficiarios['cpf'] == cpf]['nome'].values[0]
 
         result.append({
             'cpf': cpf,
             'nome': nome,
-            'concierge': '✔️' if cpf in concierge[coluna_cpf_concierge].values else '❌',
-            'sanus': '✔️' if cpf in sanus[coluna_cpf_sanus].values else '❌',
-            'beneficiarios': '✔️' if cpf in beneficiarios[coluna_cpf_beneficiarios].values else '❌'
+            'concierge': '✔️' if cpf in concierge['cpf'].values else '❌',
+            'sanus': '✔️' if cpf in sanus['cpf'].values else '❌',
+            'beneficiarios': '✔️' if cpf in beneficiarios['cpf'].values else '❌'
         })
 
     return result
@@ -80,9 +103,23 @@ def comparar_cpfs(concierge_file, sanus_file, beneficiarios_file):
 def get():
     return "Hello world!"
 
-# Rota para processar e retornar os resultados
 @app.route("/upload", methods=["POST"])
 def upload_files():
+    # Verificar se os arquivos foram enviados
+    if not request.files:
+        return jsonify({'error': 'Nenhum arquivo enviado.'}), 400
+
+    files = request.files
+    resultados = comparar_cpfs(files)
+
+    if isinstance(resultados, tuple):  # Caso retorne erro na identificação
+        return resultados
+
+    return jsonify(resultados)
+
+# Rota para processar e retornar os resultados
+@app.route("/upload2", methods=["POST"])
+def upload_filesw():
     if 'concierge_file' not in request.files or 'sanus_file' not in request.files or 'beneficiarios_file' not in request.files:
         return jsonify({'error': 'Arquivos não enviados corretamente.'}), 400
 
