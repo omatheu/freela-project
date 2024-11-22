@@ -27,41 +27,18 @@ def encontrar_coluna_nome(df, tabela):
     nome_colunas = {
         'concierge': ['funcionario', 'nome'],
         'sanus': ['nome do beneficiário', 'nome'],
-        'beneficiarios': ['nome do beneficiário', 'nome do beneficiario', 'nome']
+        'beneficiarios': ['nome do beneficiário', 'nome']
     }
     for col in df.columns:
         if any(nc in col.lower() for nc in nome_colunas[tabela]):
             return col
     raise ValueError(f"Coluna de Nome não encontrada na tabela {tabela}")
 
-# Função para identificar o tipo de tabela com base nas colunas
-def identificar_tabela(df):
-    colunas = df.columns.str.lower().tolist()
-
-    if any(cpf_col in colunas for cpf_col in ['cpf', 'funcionario']):
-        return 'concierge'
-    elif any(nome_col in colunas for nome_col in ['nome do beneficiário', 'nome']):
-        return 'sanus'
-    elif any(nome_col in colunas for nome_col in ['nome do beneficiário', 'nome do beneficiario']):
-        return 'beneficiarios'
-    else:
-        raise ValueError("Tipo de tabela não identificado. Verifique o conteúdo dos arquivos.")
-
 # Função para processar os arquivos e comparar os CPFs e Nomes
-def comparar_cpfs(arquivos):
-    tabelas = {}
-    for arquivo in arquivos:
-        df = pd.read_excel(arquivo)
-        tipo_tabela = identificar_tabela(df)
-        tabelas[tipo_tabela] = df
-
-    # Garantir que todas as tabelas foram carregadas
-    if not all(tipo in tabelas for tipo in ['concierge', 'sanus', 'beneficiarios']):
-        raise ValueError("Algumas tabelas estão faltando ou não foram identificadas corretamente.")
-
-    concierge = tabelas['concierge']
-    sanus = tabelas['sanus']
-    beneficiarios = tabelas['beneficiarios']
+def comparar_cpfs(concierge_file, sanus_file, beneficiarios_file):
+    concierge = pd.read_excel(concierge_file)
+    sanus = pd.read_excel(sanus_file)
+    beneficiarios = pd.read_excel(beneficiarios_file)
 
     coluna_cpf_concierge = encontrar_coluna_cpf(concierge)
     coluna_nome_concierge = encontrar_coluna_nome(concierge, 'concierge')
@@ -80,12 +57,13 @@ def comparar_cpfs(arquivos):
     # Preparar o resultado para cada CPF
     result = []
     for cpf in all_cpfs:
+        # Buscar o nome nas três tabelas: Sanus, Concierge, Beneficiários (nesta ordem de prioridade)
         nome = '❌'
         if cpf in sanus[coluna_cpf_sanus].values:
             nome = sanus[sanus[coluna_cpf_sanus] == cpf][coluna_nome_sanus].values[0]
         elif cpf in concierge[coluna_cpf_concierge].values:
             nome = concierge[concierge[coluna_cpf_concierge] == cpf][coluna_nome_concierge].values[0]
-        elif cpf in beneficiarios[coluna_cpf_beneficiarios].values:
+        elif cpf in beneficiarios[coluna_cpf_beneficiarios].values[0]:
             nome = beneficiarios[beneficiarios[coluna_cpf_beneficiarios] == cpf][coluna_nome_beneficiarios].values[0]
 
         result.append({
@@ -105,25 +83,51 @@ def get():
 # Rota para processar e retornar os resultados
 @app.route("/upload", methods=["POST"])
 def upload_files():
-    if 'files' not in request.files:
+    if 'concierge_file' not in request.files or 'sanus_file' not in request.files or 'beneficiarios_file' not in request.files:
         return jsonify({'error': 'Arquivos não enviados corretamente.'}), 400
 
-    arquivos = request.files.getlist('files')
-    if len(arquivos) < 3:
-        return jsonify({'error': 'Envie pelo menos três arquivos.'}), 400
+    concierge_file = request.files['concierge_file']
+    sanus_file = request.files['sanus_file']
+    beneficiarios_file = request.files['beneficiarios_file']
 
-    caminhos = []
-    for arquivo in arquivos:
-        caminho = os.path.join(app.config['UPLOAD_FOLDER'], arquivo.filename)
-        arquivo.save(caminho)
-        caminhos.append(caminho)
+    concierge_path = os.path.join(app.config['UPLOAD_FOLDER'], concierge_file.filename)
+    sanus_path = os.path.join(app.config['UPLOAD_FOLDER'], sanus_file.filename)
+    beneficiarios_path = os.path.join(app.config['UPLOAD_FOLDER'], beneficiarios_file.filename)
 
-    try:
-        resultados = comparar_cpfs(caminhos)
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+    concierge_file.save(concierge_path)
+    sanus_file.save(sanus_path)
+    beneficiarios_file.save(beneficiarios_path)
+
+    resultados = comparar_cpfs(concierge_path, sanus_path, beneficiarios_path)
 
     return jsonify(resultados)
+
+# Rota para baixar o Excel
+@app.route("/download_excel", methods=["POST"])
+def download_excel():
+    data = request.json.get('data')
+    file_name = request.json.get('file_name', 'comparacao_resultados')
+
+    # Converter os valores de ✔️ e ❌ para Sim e Não no arquivo Excel
+    for item in data:
+        item['concierge'] = 'Sim' if item['concierge'] == '✔️' else 'Não'
+        item['sanus'] = 'Sim' if item['sanus'] == '✔️' else 'Não'
+        item['beneficiarios'] = 'Sim' if item['beneficiarios'] == '✔️' else 'Não'
+
+    # Criar o DataFrame a partir dos dados
+    df = pd.DataFrame(data)
+
+    # Reordenar as colunas para CPF, Nome e depois as planilhas
+    df = df[['cpf', 'nome', 'concierge', 'sanus', 'beneficiarios']]
+
+    # Criar um buffer de bytes para armazenar o Excel
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Resultados')
+
+    output.seek(0)
+
+    return send_file(output, attachment_filename=f"{file_name}.xlsx", as_attachment=True)
 
 if __name__ == "__main__":
     if not os.path.exists('uploads'):
