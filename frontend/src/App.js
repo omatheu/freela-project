@@ -101,15 +101,15 @@ function App() {
       <form onSubmit={handleSubmit} className="mt-4">
         <div className="row mb-3">
           <div className="col-md-4">
-            <label>Arquivo Concierge:</label>
+            <label>Base Operadora:</label>
             <input type="file" className="form-control" onChange={(e) => setConciergeFile(e.target.files[0])} />
           </div>
           <div className="col-md-4">
-            <label>Arquivo Sanus:</label>
+            <label>Base Plataforma Sanus:</label>
             <input type="file" className="form-control" onChange={(e) => setSanusFile(e.target.files[0])} />
           </div>
           <div className="col-md-4">
-            <label>Arquivo Beneficiários:</label>
+            <label>Base Folha RH:</label>
             <input type="file" className="form-control" onChange={(e) => setBeneficiariosFile(e.target.files[0])} />
           </div>
         </div>

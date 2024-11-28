@@ -4,11 +4,14 @@ import pandas as pd
 from io import BytesIO
 from flask_cors import CORS
 import re
+import spacy
 
 app = Flask(__name__)
 CORS(app)
 
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+nlp = spacy.load('en_core_web_sm')
 
 # Função para garantir que todos os CPFs tenham apenas números e 11 caracteres
 def formatar_cpf(cpf):
@@ -33,12 +36,30 @@ def encontrar_coluna_cpf(df):
             return col
     raise ValueError("Coluna de CPF não encontrada")
 
-# Função para encontrar a coluna de Nome com flexibilidade para diferentes formatos
+# Função para encontrar a coluna de Nome com validação adicional usando spaCy
 def encontrar_coluna_nome(df, tabela, colunas_esperadas):
+    # Verificar as colunas com base nos nomes esperados
     for col in df.columns:
         if any(nc in col.lower() for nc in colunas_esperadas):
             return col
+
+    # Caso não encontre pelo nome da coluna, usar spaCy para validar o conteúdo
+    for col in df.columns:
+        valores = df[col].dropna().astype(str).tolist()  # Obter valores não nulos da coluna
+        contagem_nomes = 0
+
+        for valor in valores:
+            doc = nlp(valor)  # Processar o valor com spaCy
+            if any(ent.label_ == "PERSON" for ent in doc.ents):  # Verificar se é um nome de pessoa
+                contagem_nomes += 1
+
+        # Considerar a coluna como contendo nomes se um número significativo de valores for identificado como nomes
+        if contagem_nomes > len(valores) * 0.5:  # Ajuste o limite conforme necessário
+            return col
+
+    # Se nenhuma coluna for identificada como contendo nomes
     raise ValueError(f"Coluna de Nome não encontrada na tabela {tabela}")
+
 
 # Função para processar os arquivos e comparar os CPFs e Nomes
 def comparar_cpfs(concierge_file, sanus_file, beneficiarios_file):
