@@ -18,9 +18,9 @@ function App() {
     const formData = new FormData();
   
     // Adiciona os arquivos, independentemente de nomes específicos
-    if (conciergeFile) formData.append('file1', conciergeFile);
-    if (sanusFile) formData.append('file2', sanusFile);
-    if (beneficiariosFile) formData.append('file3', beneficiariosFile);
+    if (conciergeFile) formData.append('concierge_file', conciergeFile);
+    if (sanusFile) formData.append('sanus_file', sanusFile);
+    if (beneficiariosFile) formData.append('beneficiarios_file', beneficiariosFile);
   
     try {
       const response = await axios.post(`${serverUrl}/upload`, formData, {
