@@ -12,7 +12,8 @@ CORS(app, resources={
         "origins": [
             "http://localhost:3000", 
             "http://172.17.0.2:3000", 
-            "https://freela-project-brown.vercel.app"
+            "https://freela-project-brown.vercel.app",
+            "https://freela-project.vercel.app/"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE"],
         "allow_headers": ["Content-Type", "Authorization"],
