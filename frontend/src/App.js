@@ -10,7 +10,7 @@ function App() {
   const [fileName, setFileName] = useState('comparacao_resultados'); // Nome do arquivo Excel
 
   // Variável para armazenar a URL do servidor
-  const serverUrl = 'http://127.0.0.1:8000/';
+  const serverUrl = 'https://freela-project-72p2.onrender.com';
 
   // Envia os arquivos para o backend e obtém os resultados da comparação
   const handleSubmit = async (event) => {
@@ -18,9 +18,9 @@ function App() {
     const formData = new FormData();
   
     // Adiciona os arquivos, independentemente de nomes específicos
-    if (conciergeFile) formData.append('file1', conciergeFile);
-    if (sanusFile) formData.append('file2', sanusFile);
-    if (beneficiariosFile) formData.append('file3', beneficiariosFile);
+    if (conciergeFile) formData.append('concierge_file', conciergeFile);
+    if (sanusFile) formData.append('sanus_file', sanusFile);
+    if (beneficiariosFile) formData.append('beneficiarios_file', beneficiariosFile);
   
     try {
       const response = await axios.post(`${serverUrl}/upload`, formData, {
