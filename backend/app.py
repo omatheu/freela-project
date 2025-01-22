@@ -84,9 +84,6 @@ def encontrar_coluna_nome(df, tabela, colunas_esperadas):
 
 # Função para processar os arquivos e comparar os CPFs e Nomes
 def comparar_cpfs(concierge, sanus, beneficiarios):
-    if not all(df.equals(var) for var in [concierge, sanus, beneficiarios]):
-        raise ValueError("Erro: Um ou mais objetos não são iguais ao DataFrame esperado.")
-    
     try:
         coluna_cpf_concierge = encontrar_coluna_cpf(concierge)
         coluna_nome_concierge = encontrar_coluna_nome(concierge, 'concierge', ['funcionario', 'nome'])
