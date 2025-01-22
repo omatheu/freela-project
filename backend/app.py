@@ -7,11 +7,19 @@ import re
 import spacy
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {  # Habilitar apenas para rotas que começam com /api/
+        "origins": ["http://localhost:3000", "http://172.17.0.2:3000", "https://freela-project-brown.vercel.app"],  # Especificar domínios permitidos
+        "methods": ["GET", "POST", "PUT", "DELETE"],  # Métodos HTTP permitidos
+        "allow_headers": ["Content-Type", "Authorization"],  # Cabeçalhos permitidos
+        "supports_credentials": True  # Habilitar cookies/autenticação cruzada
+    }
+})
 
 app.config['UPLOAD_FOLDER'] = 'uploads'
-
+print("hello")
 nlp = spacy.load('en_core_web_sm')
+
 
 # Função para garantir que todos os CPFs tenham apenas números e 11 caracteres
 def formatar_cpf(cpf):
@@ -28,6 +36,19 @@ def identificar_arquivo(df):
         return 'sanus'
     else:
         return None
+
+def process_excel(file_path):
+    # Tenta encontrar o início dos dados automaticamente
+    try:
+        # Lê a planilha inteira
+        df = pd.read_excel(file_path, header=None)  # Sem cabeçalho definido
+        # Detecta a linha com a coluna "CPF" (ou outra palavra-chave)
+        start_row = df[df.isin(['CPF']).any(axis=1)].index[0]
+        # Lê novamente os dados a partir da linha identificada
+        df = pd.read_excel(file_path, skiprows=start_row)
+    except Exception as e:
+        raise ValueError(f"Erro ao processar o arquivo: {e}")
+    return df
 
 # Função para encontrar a coluna de CPF
 def encontrar_coluna_cpf(df):
@@ -62,11 +83,10 @@ def encontrar_coluna_nome(df, tabela, colunas_esperadas):
 
 
 # Função para processar os arquivos e comparar os CPFs e Nomes
-def comparar_cpfs(concierge_file, sanus_file, beneficiarios_file):
-    concierge = pd.read_excel(concierge_file)
-    sanus = pd.read_excel(sanus_file)
-    beneficiarios = pd.read_excel(beneficiarios_file)
-
+def comparar_cpfs(concierge, sanus, beneficiarios):
+    if not all(df.equals(var) for var in [concierge, sanus, beneficiarios]):
+        raise ValueError("Erro: Um ou mais objetos não são iguais ao DataFrame esperado.")
+    
     try:
         coluna_cpf_concierge = encontrar_coluna_cpf(concierge)
         coluna_nome_concierge = encontrar_coluna_nome(concierge, 'concierge', ['funcionario', 'nome'])
@@ -118,24 +138,30 @@ def upload_files():
         if not request.files:
             return jsonify({'error': 'Nenhum arquivo foi enviado.'}), 400
 
-        # Cria um dicionário para armazenar os arquivos carregados
-        uploaded_files = {}
+        # Cria um dicionário para armazenar os arquivos carregados e processados
+        processed_files = {}
 
-        # Itera sobre todos os arquivos enviados e salva no diretório
+        # Itera sobre todos os arquivos enviados e processa
         for file_field, uploaded_file in request.files.items():
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
             uploaded_file.save(file_path)
-            uploaded_files[file_field] = file_path
 
-        # Verifica se todos os arquivos necessários foram enviados
-        if len(uploaded_files) < 3:
+            # Processa o arquivo e armazena o DataFrame no dicionário
+            try:
+                processed_files[file_field] = process_excel(file_path)
+            except ValueError as e:
+                return jsonify({'error': f"Erro ao processar o arquivo {uploaded_file.filename}: {e}"}), 400
+
+        # Verifica se todos os arquivos necessários foram processados
+        if len(processed_files) < 3:
             return jsonify({'error': 'Arquivos insuficientes. Certifique-se de enviar 3 arquivos.'}), 400
 
-        # Assumindo que os arquivos são os 3 esperados (independentemente da ordem)
-        file_paths = list(uploaded_files.values())
-
         # Chama a função para comparar os arquivos
-        resultados = comparar_cpfs(*file_paths)
+        concierge_df = processed_files.get('concierge_file')
+        sanus_df = processed_files.get('sanus_file')
+        beneficiarios_df = processed_files.get('beneficiarios_file')
+
+        resultados = comparar_cpfs(concierge_df, sanus_df, beneficiarios_df)
 
         if "error" in resultados:
             return jsonify(resultados), 400
