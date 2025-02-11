@@ -7,42 +7,42 @@ function App() {
   const [sanusFile, setSanusFile] = useState(null);
   const [beneficiariosFile, setBeneficiariosFile] = useState(null);
   const [resultados, setResultados] = useState([]);
-  const [fileName, setFileName] = useState('comparacao_resultados'); // Nome do arquivo Excel
+  const [fileName, setFileName] = useState('comparacao_resultados');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Variável para armazenar a URL do servidor
-  const serverUrl = 'https://freela-project-72p2.onrender.com';
+  const serverUrl = 'http://127.0.0.1:8000';
 
-  // Envia os arquivos para o backend e obtém os resultados da comparação
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setLoading(true);
+    setError(null);
+
     const formData = new FormData();
-  
-    // Adiciona os arquivos, independentemente de nomes específicos
     if (conciergeFile) formData.append('concierge_file', conciergeFile);
     if (sanusFile) formData.append('sanus_file', sanusFile);
     if (beneficiariosFile) formData.append('beneficiarios_file', beneficiariosFile);
-  
+
     try {
       const response = await axios.post(`${serverUrl}/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setResultados(response.data); // Define os resultados recebidos do backend
+      setResultados(response.data);
     } catch (error) {
-      console.error('Erro ao enviar arquivos:', error);
+      setError('Erro ao enviar arquivos. Tente novamente.');
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
   };
-  
 
-  // Função para baixar o arquivo Excel gerado no backend
   const handleDownload = async () => {
     try {
       const response = await axios.post(`${serverUrl}/download_excel`, {
         data: resultados,
         file_name: fileName,
       }, {
-        responseType: 'blob', // Garantir que o download seja tratado como um arquivo
+        responseType: 'blob',
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -57,70 +57,62 @@ function App() {
     }
   };
 
-  // Definir a cor da linha de acordo com a presença em diferentes tabelas
   const getRowClass = (item) => {
-    // Verifica quantos "✔️" existem nas colunas
     const countChecks = [item.concierge === '✔️', item.sanus === '✔️', item.beneficiarios === '✔️'].filter(Boolean).length;
-    if (countChecks === 3) return 'table-success'; // Verde se todas as 3 planilhas têm o CPF
-    if (countChecks === 2) return 'table-warning'; // Amarelo se 2 planilhas têm o CPF
-    return 'table-danger'; // Vermelho se apenas 1 ou nenhuma planilha tem o CPF
+    if (countChecks === 3) return 'table-success';
+    if (countChecks === 2) return 'table-warning';
+    return 'table-danger';
   };
-
-  // Renderizar uma tabela única com todos os dados comparados
-  const renderTabela = (data) => (
-    <div className="table-responsive mb-5">
-      <h3>Resultados da Comparação</h3>
-      <table className="table table-bordered">
-        <thead>
-          <tr>
-            <th>CPF</th>
-            <th>Nome</th>
-            <th>Concierge</th>
-            <th>Sanus</th>
-            <th>Beneficiários</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((item, index) => (
-            <tr key={index} className={getRowClass(item)}>
-              <td>{item.cpf}</td>
-              <td>{item.nome}</td>
-              <td>{item.concierge}</td>
-              <td>{item.sanus}</td>
-              <td>{item.beneficiarios}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
 
   return (
     <div className="container mt-5">
       <h1 className="text-center">Bate Cadastral Sanus</h1>
       <form onSubmit={handleSubmit} className="mt-4">
         <div className="row mb-3">
-          <div className="col-md-4">
-            <label>Base Operadora:</label>
-            <input type="file" className="form-control" onChange={(e) => setConciergeFile(e.target.files[0])} />
-          </div>
-          <div className="col-md-4">
-            <label>Base Plataforma Sanus:</label>
-            <input type="file" className="form-control" onChange={(e) => setSanusFile(e.target.files[0])} />
-          </div>
-          <div className="col-md-4">
-            <label>Base Folha RH:</label>
-            <input type="file" className="form-control" onChange={(e) => setBeneficiariosFile(e.target.files[0])} />
-          </div>
+          {[{ label: 'Base Operadora', state: setConciergeFile },
+            { label: 'Base Plataforma Sanus', state: setSanusFile },
+            { label: 'Base Folha RH', state: setBeneficiariosFile }].map(({ label, state }, idx) => (
+            <div key={idx} className="col-md-4">
+              <label>{label}:</label>
+              <input type="file" className="form-control" onChange={(e) => state(e.target.files[0])} />
+            </div>
+          ))}
         </div>
-        <button type="submit" className="btn btn-primary btn-block">Comparar</button>
+        <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+          {loading ? 'Processando...' : 'Comparar'}
+        </button>
       </form>
+
+      {error && <div className="alert alert-danger mt-3">{error}</div>}
 
       {resultados.length > 0 && (
         <div className="mt-5">
           <h2 className="text-center">Resultados da Comparação</h2>
-          {renderTabela(resultados)}
-
+          <button className="btn btn-success btn-block" onClick={handleDownload}>Baixar Excel</button>
+          <div className="table-responsive mb-5">
+            <table className="table table-bordered">
+              <thead>
+                <tr>
+                  <th>CPF</th>
+                  <th>Nome</th>
+                  <th>Concierge</th>
+                  <th>Sanus</th>
+                  <th>Beneficiários</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultados.map((item, index) => (
+                  <tr key={index} className={getRowClass(item)}>
+                    <td>{item.cpf}</td>
+                    <td>{item.nome}</td>
+                    <td>{item.concierge}</td>
+                    <td>{item.sanus}</td>
+                    <td>{item.beneficiarios}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="mt-4">
             <label htmlFor="fileName">Nome do Arquivo Excel:</label>
             <input
@@ -130,7 +122,6 @@ function App() {
               value={fileName}
               onChange={(e) => setFileName(e.target.value)}
             />
-            <button className="btn btn-success btn-block" onClick={handleDownload}>Baixar Excel</button>
           </div>
         </div>
       )}
@@ -139,4 +130,3 @@ function App() {
 }
 
 export default App;
-

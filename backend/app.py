@@ -5,13 +5,15 @@ from io import BytesIO
 from flask_cors import CORS
 import re
 import spacy
+import tempfile
 
 app = Flask(__name__)
 CORS(app, resources={
     r"*": {
         "origins": [
             "https://freela-project-brown.vercel.app",
-            "https://freela-project.vercel.app"
+            "https://freela-project.vercel.app",
+            "http://localhost:3000"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE"],
         "allow_headers": ["Content-Type", "Authorization"],
@@ -22,46 +24,37 @@ CORS(app, resources={
 app.config['UPLOAD_FOLDER'] = 'uploads'
 nlp = spacy.load('en_core_web_sm')
 
-# Middleware para tratamento global de erros
+def save_as_csv(df, filename):
+    csv_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    df.to_csv(csv_path, index=False, encoding='utf-8')
+    return csv_path
+
 @app.errorhandler(Exception)
 def handle_exception(e):
-    response = {
-        "error": "Ocorreu um erro inesperado.",
-        "details": str(e)
-    }
-    return jsonify(response), 500
+    return jsonify({"error": "Erro interno no servidor", "details": str(e)}), 500
 
-# Função auxiliar para respostas padronizadas de erro
-def error_response(message, status_code=400):
-    return jsonify({"error": message}), status_code
-
-# Função para formatar CPFs
 def formatar_cpf(cpf):
     cpf_str = re.sub(r'\D', '', str(cpf))
     return cpf_str.zfill(11)
 
-# Função para processar arquivo Excel
-def process_excel(file_path):
+def process_excel_in_chunks(file_path):
     try:
-        df = pd.read_excel(file_path, header=None)
-        if df.empty:
-            raise ValueError("O arquivo está vazio.")
-        start_row = df[df.isin(['CPF']).any(axis=1)].index[0]
-        df = pd.read_excel(file_path, skiprows=start_row)
-        if df is None or not hasattr(df, 'columns'):
-            raise ValueError("Erro ao processar o arquivo. Nenhuma tabela válida encontrada.")
+        # Encontrar a linha do cabeçalho
+        df_header = pd.read_excel(file_path, header=None, engine="openpyxl", nrows=100)
+        start_row = df_header[df_header.isin(['CPF']).any(axis=1)].index[0]
+        
+        # Ler o DataFrame com os cabeçalhos corretos
+        df = pd.read_excel(file_path, skiprows=start_row, engine="openpyxl")
         return df
     except Exception as e:
         raise ValueError(f"Erro ao processar o arquivo {file_path}: {e}")
 
-# Função para encontrar coluna de CPF
 def encontrar_coluna_cpf(df):
     for col in df.columns:
         if 'cpf' in col.lower():
             return col
     raise ValueError("Coluna de CPF não encontrada")
 
-# Função para encontrar coluna de Nome
 def encontrar_coluna_nome(df, tabela, colunas_esperadas):
     for col in df.columns:
         if any(nc in col.lower() for nc in colunas_esperadas):
@@ -75,100 +68,102 @@ def encontrar_coluna_nome(df, tabela, colunas_esperadas):
 
     raise ValueError(f"Coluna de Nome não encontrada na tabela {tabela}")
 
-# Função para comparar CPFs entre tabelas
 def comparar_cpfs(concierge, sanus, beneficiarios):
     try:
-        coluna_cpf_concierge = encontrar_coluna_cpf(concierge)
-        coluna_nome_concierge = encontrar_coluna_nome(concierge, 'concierge', ['funcionario', 'nome'])
-        coluna_cpf_sanus = encontrar_coluna_cpf(sanus)
-        coluna_nome_sanus = encontrar_coluna_nome(sanus, 'sanus', ['nome do beneficiário', 'nome'])
-        coluna_cpf_beneficiarios = encontrar_coluna_cpf(beneficiarios)
-        coluna_nome_beneficiarios = encontrar_coluna_nome(beneficiarios, 'beneficiarios', ['nome do beneficiário', 'nome'])
+        # Encontrar colunas de CPF e Nome em cada DataFrame
+        col_cpf_con = encontrar_coluna_cpf(concierge)
+        col_nome_con = encontrar_coluna_nome(concierge, 'concierge', ['funcionario', 'nome'])
+        
+        col_cpf_sanus = encontrar_coluna_cpf(sanus)
+        col_nome_sanus = encontrar_coluna_nome(sanus, 'sanus', ['nome do beneficiário', 'nome'])
+        
+        col_cpf_ben = encontrar_coluna_cpf(beneficiarios)
+        col_nome_ben = encontrar_coluna_nome(beneficiarios, 'beneficiarios', ['nome do beneficiário', 'nome'])
     except ValueError as e:
         return {"error": str(e)}
 
-    concierge[coluna_cpf_concierge] = concierge[coluna_cpf_concierge].astype(str).apply(formatar_cpf)
-    sanus[coluna_cpf_sanus] = sanus[coluna_cpf_sanus].astype(str).apply(formatar_cpf)
-    beneficiarios[coluna_cpf_beneficiarios] = beneficiarios[coluna_cpf_beneficiarios].astype(str).apply(formatar_cpf)
+    # Formatar CPFs
+    concierge[col_cpf_con] = concierge[col_cpf_con].astype(str).apply(formatar_cpf)
+    sanus[col_cpf_sanus] = sanus[col_cpf_sanus].astype(str).apply(formatar_cpf)
+    beneficiarios[col_cpf_ben] = beneficiarios[col_cpf_ben].astype(str).apply(formatar_cpf)
 
-    all_cpfs = set(concierge[coluna_cpf_concierge]).union(set(sanus[coluna_cpf_sanus])).union(set(beneficiarios[coluna_cpf_beneficiarios]))
+    # Coletar todos os CPFs
+    cpfs_con = set(concierge[col_cpf_con])
+    cpfs_sanus = set(sanus[col_cpf_sanus])
+    cpfs_ben = set(beneficiarios[col_cpf_ben])
+    todos_cpfs = cpfs_con.union(cpfs_sanus).union(cpfs_ben)
 
-    result = []
-    for cpf in all_cpfs:
+    # Comparar cada CPF
+    resultados = []
+    for cpf in todos_cpfs:
+        # Encontrar nome (prioridade Sanus > Concierge > Beneficiários)
         nome = '❌'
-        if cpf in sanus[coluna_cpf_sanus].values:
-            nome = sanus[sanus[coluna_cpf_sanus] == cpf][coluna_nome_sanus].values[0]
-        elif cpf in concierge[coluna_cpf_concierge].values:
-            nome = concierge[concierge[coluna_cpf_concierge] == cpf][coluna_nome_concierge].values[0]
-        elif cpf in beneficiarios[coluna_cpf_beneficiarios].values:
-            nome = beneficiarios[beneficiarios[coluna_cpf_beneficiarios] == cpf][coluna_nome_beneficiarios].values[0]
+        if cpf in cpfs_sanus:
+            nome = sanus[sanus[col_cpf_sanus] == cpf][col_nome_sanus].values[0]
+        elif cpf in cpfs_con:
+            nome = concierge[concierge[col_cpf_con] == cpf][col_nome_con].values[0]
+        elif cpf in cpfs_ben:
+            nome = beneficiarios[beneficiarios[col_cpf_ben] == cpf][col_nome_ben].values[0]
 
-        result.append({
+        resultados.append({
             'cpf': cpf,
             'nome': nome,
-            'concierge': '✔️' if cpf in concierge[coluna_cpf_concierge].values else '❌',
-            'sanus': '✔️' if cpf in sanus[coluna_cpf_sanus].values else '❌',
-            'beneficiarios': '✔️' if cpf in beneficiarios[coluna_cpf_beneficiarios].values else '❌'
+            'concierge': '✔️' if cpf in cpfs_con else '❌',
+            'sanus': '✔️' if cpf in cpfs_sanus else '❌',
+            'beneficiarios': '✔️' if cpf in cpfs_ben else '❌'
         })
 
-    return result
-
-@app.route("/", methods=["GET"])
-def get():
-    return "Hello world!"
+    return resultados
 
 @app.route("/upload", methods=["POST"])
 def upload_files():
     try:
         if not request.files:
-            return error_response('Nenhum arquivo foi enviado.')
+            return jsonify({'error': 'Nenhum arquivo enviado'}), 400
 
-        required_files = ['concierge_file', 'sanus_file', 'beneficiarios_file']
-        processed_files = {}
+        arquivos = ['concierge_file', 'sanus_file', 'beneficiarios_file']
+        dataframes = {}
+        
+        for arquivo in arquivos:
+            file = request.files.get(arquivo)
+            if not file:
+                return jsonify({'error': f'Arquivo {arquivo} ausente'}), 400
+            
+            caminho = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+            file.save(caminho)
+            
+            df = process_excel_in_chunks(caminho)
+            dataframes[arquivo] = df
 
-        for file_field in required_files:
-            uploaded_file = request.files.get(file_field)
-            if not uploaded_file:
-                return error_response(f"O arquivo '{file_field}' está ausente.")
+        # Comparar CPFs
+        resultado = comparar_cpfs(
+            dataframes['concierge_file'],
+            dataframes['sanus_file'],
+            dataframes['beneficiarios_file']
+        )
 
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
-            uploaded_file.save(file_path)
-            processed_files[file_field] = process_excel(file_path)
+        if isinstance(resultado, dict) and 'error' in resultado:
+            return jsonify(resultado), 400
 
-        if len(processed_files) < len(required_files):
-            return error_response('Arquivos insuficientes. Certifique-se de enviar todos os arquivos obrigatórios.')
+        return jsonify(resultado)
 
-        concierge_df = processed_files['concierge_file']
-        sanus_df = processed_files['sanus_file']
-        beneficiarios_df = processed_files['beneficiarios_file']
-
-        resultados = comparar_cpfs(concierge_df, sanus_df, beneficiarios_df)
-
-        if "error" in resultados:
-            return error_response(resultados["error"], 400)
-
-        return jsonify(resultados)
     except Exception as e:
-        return handle_exception(e)
+        return jsonify({'error': str(e)}), 500
 
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
     try:
         data = request.json.get('data')
-        file_name = request.json.get('file_name', 'comparacao_resultados')
-
-        for item in data:
-            item['concierge'] = 'Sim' if item['concierge'] == '✔️' else 'Não'
-            item['sanus'] = 'Sim' if item['sanus'] == '✔️' else 'Não'
-            item['beneficiarios'] = 'Sim' if item['beneficiarios'] == '✔️' else 'Não'
-
         df = pd.DataFrame(data)
-        output = BytesIO()
-        df.to_excel(output, index=False)
-        output.seek(0)
-
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True, download_name=f"{file_name}.xlsx")
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            df.to_excel(tmp.name, index=False)
+            return send_file(
+                tmp.name,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name='resultado_comparacao.xlsx'
+            )
     except Exception as e:
         return handle_exception(e)
 
