@@ -11,7 +11,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const serverUrl = 'http://127.0.0.1:8000';
+  const serverUrl = 'https://freela-project-72p2.onrender.com';
 
   const handleSubmit = async (event) => {
     event.preventDefault();
